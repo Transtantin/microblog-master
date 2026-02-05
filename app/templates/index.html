@@ -3,9 +3,44 @@
 {% block content %}
     <h1>Привет, {{ current_user.username }}!</h1>
     
+    <!-- ФОРМА СОЗДАНИЯ ПОСТА -->
+    <form action="" method="post">
+        {{ form.hidden_tag() }}
+        <p>
+            {{ form.post.label }}<br>
+            {{ form.post(cols=32, rows=4) }}<br>
+            {% for error in form.post.errors %}
+            <span style="color: red;">[{{ error }}]</span>
+            {% endfor %}
+        </p>
+        <p>{{ form.submit() }}</p>
+    </form>
+    
+    <hr>
+    
+    <!-- СПИСОК ПОСТОВ -->
     {% for post in posts %}
     <div>
-        <p><b>{{ post.author.username }}</b> пишет: <i>{{ post.body }}</i></p>
+        <p>
+            <img src="{{ post.author.avatar(36) }}">
+            <a href="{{ url_for('user', username=post.author.username) }}">
+                {{ post.author.username }}
+            </a>
+            пишет:
+        </p>
+        <p><i>{{ post.body }}</i></p>
+        <small>Опубликовано: {{ post.timestamp }}</small>
+        
+        <!-- НОВЫЙ БЛОК: Кнопки управления -->
+        <small>ID автора: {{ post.author.id }}, Ваш ID: {{ current_user.id }}</small>
+        {% if post.author.id == current_user.id %}
+            <br>
+            <a href="{{ url_for('edit_post', id=post.id) }}">Редактировать</a> | 
+            <a href="{{ url_for('delete_post', id=post.id) }}" 
+               onclick="return confirm('Вы уверены, что хотите удалить этот пост?');">Удалить</a>
+        {% endif %}
+        <!-- КОНЕЦ НОВОГО БЛОКА -->
+        
     </div>
     <hr>
     {% endfor %}

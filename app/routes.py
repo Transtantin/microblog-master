@@ -1,32 +1,38 @@
 from flask import render_template, flash, redirect, url_for, request
 from app import app, db
-from app.forms import LoginForm, RegistrationForm
+from app.forms import LoginForm, RegistrationForm, EditProfileForm
 from flask_login import current_user, login_user, logout_user, login_required
 from app.models import User
 from urllib.parse import urlsplit
 import sqlalchemy as sa
+from datetime import datetime, timezone
+from app.forms import PostForm
+from app.models import Post 
 
 
-@app.route('/')
-@app.route('/index')
+@app.route('/', methods=['GET', 'POST'])
+@app.route('/index', methods=['GET', 'POST'])
 @login_required
 def index():
-    # Список постов - каждый пост это словарь
-    posts = [
-        {
-            'author': {'username': 'Иван'},
-            'body': 'Сегодня отличная погода в Москве!'
-        },
-        {
-            'author': {'username': 'Мария'},
-            'body': 'Фласк — это очень круто!'
-        },
-        {
-            'author': {'username': 'Виктор'},
-            'body': 'Учусь программировать на Python.'
-        }
-    ]
-    return render_template('index.html', title='Home', user=current_user, posts=posts)
+    form = PostForm()
+    
+    # ЛОГИКА СОХРАНЕНИЯ ПОСТА
+    if form.validate_on_submit():
+        post = Post(body=form.post.data, author=current_user)
+        db.session.add(post)
+        db.session.commit()
+        flash('Ваш пост опубликован!')
+        return redirect(url_for('index'))
+    
+    # ЛОГИКА ОТОБРАЖЕНИЯ ПОСТОВ
+    # sa.select(Post) - выбрать посты
+    # .order_by(Post.timestamp.desc()) - сортировать по времени (сначала новые)
+    # db.session.scalars(...) - выполнить запрос и получить список объектов
+    posts = db.session.scalars(sa.select(Post).order_by(Post.timestamp.desc())).all()
+        
+    return render_template("index.html", title='Home Page', form=form, posts=posts)
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -76,10 +82,70 @@ def register():
 @app.route('/user/<username>')
 @login_required
 def user(username):
-    user = db.session.first_or_404(sa.select(User).where(User.username == username))
+    user = db.first_or_404(sa.select(User).where(User.username == username))
 
     posts = [
         {'author': user, 'body': 'Тестовый пост #1'},
         {'author': user, 'body': 'Тестовый пост #2'}
     ]
     return render_template('user.html', user=user, posts=posts)
+
+
+
+@app.before_request
+def before_request():
+    if current_user.is_authenticated:
+        current_user.last_seen = datetime.now(timezone.utc)
+        db.session.commit()
+
+
+@app.route('/edit_profile', methods = ['GET', 'POST'])
+@login_required
+def edit_profile():
+    form = EditProfileForm(current_user.username)
+    if form.validate_on_submit():
+        current_user.username = form.username.data
+        current_user.about_me = form.about_me.data
+        db.session.commit()
+        flash('Ваши изменения сохранены.')
+        return redirect(url_for('edit_profile'))
+    elif request.method =='GET':
+        form.username.data = current_user.username
+        form.about_me.data = current_user.about_me
+    return render_template('edit_profile.html', title = 'Редактировать профиль', form = form)
+
+
+@app.route('/edit_post/<int:id>', methods = ['GET', 'POST'])
+@login_required
+def edit_post(id):
+    post = db.first_or_404(sa.select(Post).where(Post.id == id))
+
+    if post.author != current_user:
+        flash('Вы не можете едактировать этот пост.')
+        return redirect(url_for('index'))
+
+    form = PostForm()
+    if form.validate_on_submit():
+        post.body = form.post.data
+        db.session.commit()
+        flash('Ваш пост был обновлен.')
+        return redirect(url_for('index'))
+    elif request.method =='GET':
+        form.post.data = post.body
+
+    return render_template('edit_post.html', title = 'Редактирование поста', form = form)
+
+
+@app.route('/delete_post/<int:id>')
+@login_required
+def delete_post(id):
+    post = db.first_or_404(sa.select(Post).where(Post.id == id))
+
+    if post.author != current_user:
+        flash('Вы не можете удалить этот пост.')
+        return redirect(url_for('index'))
+
+    db.session.delete(post)
+    db.session.commit()
+    flash('Пост удален.')
+    return redirect(url_for('index'))
