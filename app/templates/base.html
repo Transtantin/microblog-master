@@ -18,7 +18,12 @@
             <a href="{{ url_for('logout') }}">Выйти</a>
             <a href="{{ url_for('user', username=current_user.username) }}">Профиль</a>
             {% endif %}
+            <a href="{{ url_for('search') }}">Поиск</a>
+            {% if current_user.is_authenticated and current_user.is_admin() %}
+            <a href="{{ url_for('admin_stats') }}" style="color: red;">[Админка]</a>
+            {% endif %}
         </div>
+        
         <hr>
         {% with messages = get_flashed_messages() %}
         {% if messages %}

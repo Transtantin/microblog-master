@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Поиск и фильтрация</h1>
+    
+    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">
+        <form action="" method="get">
+            <p>
+                {{ form.q.label }}: {{ form.q(size=30, placeholder="Текст поста или автор") }}
+            </p>
+            <p>
+                {{ form.date_from.label }}: {{ form.date_from() }} 
+                {{ form.date_to.label }}: {{ form.date_to() }}
+            </p>
+            <p>
+                {{ form.sort_by.label }}: {{ form.sort_by() }}
+            </p>
+            <p>{{ form.submit() }}</p>
+        </form>
+    </div>
+
+    <h3>Результаты поиска ({{ posts|length }})</h3>
+    <hr>
+    
+    {% for post in posts %}
+        <div>
+            <p>
+                <img src="{{ post.author.avatar(36) }}">
+                <a href="{{ url_for('user', username=post.author.username) }}">
+                    {{ post.author.username }}
+                </a>
+                <small>({{ post.timestamp.strftime('%d.%m.%Y %H:%M') }})</small>:
+            </p>
+            <p>{{ post.body }}</p>
+        </div>
+        <hr>
+    {% else %}
+        <p>Ничего не найдено.</p>
+    {% endfor %}
+
+{% endblock %}

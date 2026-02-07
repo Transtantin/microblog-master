@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Управление пользователями</h1>
+<table border="1">
+    <tr>
+        <th>ID</th><th>Login</th><th>Email</th><th>Роль</th><th>Статус</th><th>Действия</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.role }}</td>
+        <td>
+            {% if u.blocked %}<span style="color:red">BAN</span>{% else %}OK{% endif %}
+        </td>
+        <td>
+            {% if u.role != 'admin' %}
+                {% if u.blocked %}
+                    <a href="{{ url_for('unblock_user', user_id=u.id) }}">Разбанить</a>
+                {% else %}
+                    <a href="{{ url_for('block_user', user_id=u.id) }}" style="color:red">Забанить</a>
+                {% endif %}
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

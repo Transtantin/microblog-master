@@ -15,6 +15,14 @@
                 
                 {% if user == current_user %}
                 <p><a href="{{ url_for('edit_profile') }}">Редактировать профиль</a></p>
+                {% elif not current_user.is_following(user) %}
+                <p>
+                    <a href="{{ url_for('follow', username=user.username) }}">Подписаться</a>
+                </p>
+                {% else %}
+                <p>
+                    <a href="{{ url_for('unfollow', username=user.username) }}">Отписаться</a>
+                </p>
                 {% endif %}
             </td>
         </tr>
@@ -22,7 +30,26 @@
     <hr>
     {% for post in posts %}
     <div>
-        <p><b>{{ post.author.username }}</b> пишет: <i>{{ post.body }}</i></p>
+        <p>
+            <img src="{{ post.author.avatar(36) }}">
+            <a href="{{ url_for('user', username=post.author.username) }}">
+                {{ post.author.username }}
+            </a>
+            пишет:
+        </p>
+        <p><i>{{ post.body }}</i></p>
+        <small>Опубликовано: {{ post.timestamp }}</small>
+        
+        <!-- НОВЫЙ БЛОК: Кнопки управления -->
+        {% if post.author.id == current_user.id %}
+            <br>
+            <a href="{{ url_for('edit_post', id=post.id) }}">Редактировать</a> | 
+            <a href="{{ url_for('delete_post', id=post.id) }}" 
+               onclick="return confirm('Вы уверены, что хотите удалить этот пост?');">Удалить</a>
+        {% endif %}
+        <!-- КОНЕЦ НОВОГО БЛОКА -->
+        
     </div>
+    <hr>
     {% endfor %}
 {% endblock %}

@@ -1,13 +1,15 @@
 from flask import render_template, flash, redirect, url_for, request
 from app import app, db
-from app.forms import LoginForm, RegistrationForm, EditProfileForm
+from app.forms import LoginForm, RegistrationForm, EditProfileForm, SearchForm, PostForm 
 from flask_login import current_user, login_user, logout_user, login_required
 from app.models import User
 from urllib.parse import urlsplit
 import sqlalchemy as sa
 from datetime import datetime, timezone
-from app.forms import PostForm
 from app.models import Post 
+from wtforms.validators import Optional
+from functools import wraps
+from flask import abort
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -25,12 +27,16 @@ def index():
         return redirect(url_for('index'))
     
     # ЛОГИКА ОТОБРАЖЕНИЯ ПОСТОВ
-    # sa.select(Post) - выбрать посты
-    # .order_by(Post.timestamp.desc()) - сортировать по времени (сначала новые)
-    # db.session.scalars(...) - выполнить запрос и получить список объектов
-    posts = db.session.scalars(sa.select(Post).order_by(Post.timestamp.desc())).all()
+    show_followed = False
+    if request.args.get('feed') == 'following':
+        show_followed = True
+        query = current_user.following_posts() # Только подписки
+    else:
+        query = sa.select(Post).order_by(Post.timestamp.desc()) # Все посты (глобальная лента)
+
+    posts = db.session.scalars(query).all()
         
-    return render_template("index.html", title='Home Page', form=form, posts=posts)
+    return render_template("index.html", title='Home Page', form=form, posts=posts, show_followed=show_followed)
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -45,6 +51,9 @@ def login():
 
         if user is None or not user.check_password(form.password.data):
             flash('Invalid username or password')
+            return redirect(url_for('login'))
+        if user.blocked:
+            flash('Ваш аккаунт заблокирован администратором.')
             return redirect(url_for('login'))
 
         login_user(user, remember=form.remember_me.data)
@@ -84,10 +93,9 @@ def register():
 def user(username):
     user = db.first_or_404(sa.select(User).where(User.username == username))
 
-    posts = [
-        {'author': user, 'body': 'Тестовый пост #1'},
-        {'author': user, 'body': 'Тестовый пост #2'}
-    ]
+    querry = sa.select(Post).where(Post.author == user).order_by(Post.timestamp.desc())
+
+    posts = db.session.scalars(querry).all()
     return render_template('user.html', user=user, posts=posts)
 
 
@@ -141,11 +149,157 @@ def edit_post(id):
 def delete_post(id):
     post = db.first_or_404(sa.select(Post).where(Post.id == id))
 
-    if post.author != current_user:
+    if post.author != current_user and not current_user.is_admin():
         flash('Вы не можете удалить этот пост.')
         return redirect(url_for('index'))
 
     db.session.delete(post)
     db.session.commit()
     flash('Пост удален.')
+    
+        
     return redirect(url_for('index'))
+
+
+
+@app.route('/follow/<username>')
+@login_required
+def follow(username):
+    user = db.first_or_404(sa.select(User).where(User.username == username))
+    if user == current_user:
+        flash('Вы не можете подписаться на самого себя!')
+        return redirect(url_for('user', username= username))
+    
+    current_user.follow(user)
+    db.session.commit()
+    flash(f'Вы подписались на {username}!')
+    return redirect(url_for('user', username = username))
+
+
+@app.route('/unfollow/<username>')
+@login_required
+def unfollow(username):
+    user = db.first_or_404(sa.select(User).where(User.username == username))
+    if user == current_user:
+        flash('Вы не можете отписаться от самого себя!')
+        return redirect(url_for('user', username= username))
+    
+    current_user.unfollow(user)
+    db.session.commit()
+    flash(f'Вы отписались от {username}!')
+    return redirect(url_for('user', username = username))
+
+
+# app/routes.py
+
+
+
+@app.route('/search')
+@login_required
+def search():
+    # Создаем форму из аргументов GET-запроса
+    form = SearchForm(request.args, meta={'csrf': False})
+
+    # Базовый запрос
+    query = sa.select(Post).join(Post.author)
+
+    # 1. Поиск по тексту или автору
+    if form.q.data:
+        search_term = f"%{form.q.data}%"
+        query = query.where(
+            sa.or_(
+                Post.body.ilike(search_term),
+                User.username.ilike(search_term)
+            )
+        )
+
+    # 2. Фильтр "С даты"
+    if form.date_from.data:
+        date_from = datetime.combine(form.date_from.data, datetime.min.time())
+        query = query.where(Post.timestamp >= date_from)
+
+    # 3. Фильтр "По дату" (ИСПРАВЛЕНА ОПЕЧАТКА: date_to вместо date_from)
+    if form.date_to.data:
+        date_to = datetime.combine(form.date_to.data, datetime.max.time())
+        query = query.where(Post.timestamp <= date_to)  
+
+    # 4. Сортировка
+    if form.sort_by.data == 'oldest':
+        query = query.order_by(Post.timestamp.asc())
+    elif form.sort_by.data == 'author_asc':
+        query = query.order_by(User.username.asc())  
+    elif form.sort_by.data == 'author_desc':
+        query = query.order_by(User.username.desc()) 
+    else:
+        # По умолчанию или если выбрано 'newest'
+        query = query.order_by(Post.timestamp.desc())
+
+    posts = db.session.scalars(query).all()
+
+    return render_template('search.html', title='Поиск', form=form, posts=posts)
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_functions(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin():
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_functions
+
+
+@app.route('/admin/stats')
+@login_required
+@admin_required
+def admin_stats():
+    user_count = db.session.scalar(sa.select(sa.func.count(User.id)))
+    posts_count = db.session.scalar(sa.select(sa.func.count(Post.id)))
+    avg_post_len = db.session.scalar(sa.select(sa.func.avg(sa.func.length(Post.body))))
+    if avg_post_len:
+        avg_post_len = round(avg_post_len, 1)
+    else:
+        avg_post_len = 0
+    
+    acctive_users = db.session.execute(
+        sa.select(User.username, sa.func.count(Post.id).label('total'))
+        .join(Post)
+        .group_by(User.id)
+        .order_by(sa.desc('total'))
+        .limit(3)
+    ).all()
+    return render_template('admin_status.html',
+                            users_count=user_count,
+                            posts_count=posts_count,
+                            avg_post_len=avg_post_len,
+                            active_users=acctive_users)
+
+
+@app.route('/admin/block/<int:user_id>')
+@login_required
+@admin_required
+def block_user(user_id):
+    user = db.session.get(User, user_id)
+    if user and user.role != 'admin': # Админа банить нельзя!
+        user.blocked = True
+        db.session.commit()
+        flash(f'Пользователь {user.username} заблокирован.')
+    return redirect(url_for('admin_users')) # Сделаем список юзеров ниже
+
+@app.route('/admin/unblock/<int:user_id>')
+@login_required
+@admin_required
+def unblock_user(user_id):
+    user = db.session.get(User, user_id)
+    if user:
+        user.blocked = False
+        db.session.commit()
+        flash(f'Пользователь {user.username} разблокирован.')
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users')
+@login_required
+@admin_required
+def admin_users():
+    users = db.session.scalars(sa.select(User).order_by(User.id)).all()
+    return render_template('admin_users.html', users=users)

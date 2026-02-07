@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, BooleanField, SubmitField, TextAreaField
-from wtforms.validators import DataRequired, ValidationError, Email, EqualTo, Length, Regexp
+from wtforms import DateField, SelectField, StringField, PasswordField, BooleanField, SubmitField, TextAreaField
+from wtforms.validators import DataRequired, ValidationError, Email, EqualTo, Length, Regexp, Optional
 import sqlalchemy as sa
 from app import db
 from app.models import User
@@ -75,3 +75,16 @@ class PostForm(FlaskForm):
         Length(min=1, max=140)
     ])
     submit = SubmitField('Опубликовать')
+
+
+class SearchForm(FlaskForm):
+    q=StringField('Поиск', validators=[])
+    date_from = DateField('С даты', format='%Y-%m-%d', validators=[Optional()], render_kw={"type": "date"})
+    date_to = DateField('По дату', format='%Y-%m-%d', validators=[Optional()], render_kw={"type": "date"})
+    sort_by = SelectField('Сортировка', choices=[
+        ('newest', 'Сначала новые'),
+        ('oldest', 'Сначала старые'),
+        ('author_asc', 'Автор (А-Я)'),
+        ('author_desc', 'Автор (Я-А)')
+    ])
+    submit = SubmitField('Найти')

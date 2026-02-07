@@ -7,6 +7,11 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from hashlib import md5
 
+followers = db.Table('followers',
+    db.Column('follower_id', sa.Integer, sa.ForeignKey('user.id'), primary_key=True),
+    db.Column('followed_id', sa.Integer, sa.ForeignKey('user.id'), primary_key=True)
+)
+
 class User( UserMixin, db.Model):
     id: so.Mapped[int] = so.mapped_column(primary_key=True)
     username: so.Mapped[str] = so.mapped_column(sa.String(64), index=True, unique=True)
@@ -15,6 +20,11 @@ class User( UserMixin, db.Model):
     about_me: so.Mapped[Optional[str]] = so.mapped_column(sa.String(140))
     last_seen: so.Mapped[Optional[datetime]] = so.mapped_column(default=lambda: datetime.now(timezone.utc))
     posts: so.WriteOnlyMapped['Post'] = so.relationship(back_populates='author')
+    role: so.Mapped[str] = so.mapped_column(sa.String(20), default='user')
+    blocked: so.Mapped[bool] = so.mapped_column(default=False)
+    
+    def is_admin(self):
+        return self.role == 'admin'
 
     def avatar(self, size):
         digest = md5(self.email.lower().encode('utf-8')).hexdigest()
@@ -28,6 +38,38 @@ class User( UserMixin, db.Model):
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    following: so.WriteOnlyMapped['User'] = so.relationship(
+        secondary=followers,
+        primaryjoin=(followers.c.follower_id == id),
+        secondaryjoin=(followers.c.followed_id == id),
+        backref=db.backref('followers', lazy='dynamic'),
+        lazy='dynamic'
+    )
+
+    # Методы управления подпиской
+    def follow(self, user):
+        if not self.is_following(user):
+            self.following.add(user)
+
+    def unfollow(self, user):
+        if self.is_following(user):
+            self.following.remove(user)
+
+    def is_following(self, user):
+        query = self.following.select().where(User.id == user.id)
+        return db.session.scalar(query) is not None
+
+    # Самое главное: запрос постов от тех, на кого подписан
+    def following_posts(self):
+        Author = so.aliased(User)
+        return (
+            sa.select(Post)
+            .join(Post.author.of_type(Author))
+            .join(followers, followers.c.followed_id == Author.id)
+            .where(followers.c.follower_id == self.id)
+            .order_by(Post.timestamp.desc())
+        )
 
 class Post(db.Model):
     id: so.Mapped[int] = so.mapped_column(primary_key=True)
