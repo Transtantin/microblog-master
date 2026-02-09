@@ -5,6 +5,7 @@ import sqlalchemy as sa
 from app import db
 from app.models import User
 import re
+from flask_wtf.file import FileField, FileAllowed
 
 class LoginForm(FlaskForm):
     username = StringField('Имя пользователя', validators=[DataRequired()])
@@ -55,7 +56,10 @@ class RegistrationForm(FlaskForm):
     
 class EditProfileForm(FlaskForm):
     username= StringField('Имя пользователя', validators=[DataRequired()])
-    about_me = TextAreaField('О себе', validators=[Length(min=0, max=140)])  
+    about_me = TextAreaField('О себе', validators=[Length(min=0, max=140)]) 
+    avatar = FileField('Обновить фото профиля', validators=[
+        FileAllowed(['jpg', 'png', 'jpeg'], 'Только картинки (jpg, png)!') 
+    ])
     submit = SubmitField('Подтвердить')      
 
     def __init__(self, original_username, *args, **kwargs):
@@ -88,3 +92,27 @@ class SearchForm(FlaskForm):
         ('author_desc', 'Автор (Я-А)')
     ])
     submit = SubmitField('Найти')
+
+class ChangePasswordForm(FlaskForm):
+    old_password = PasswordField('Старый пароль', validators=[DataRequired()])
+    
+    new_password = PasswordField('Новый пароль', validators=[
+        DataRequired(),
+        Length(min=4, max=16, message="Пароль должен быть от 4 до 16 символов")
+    ])
+    
+    confirm_password = PasswordField('Повторите новый пароль', validators=[
+        DataRequired(),
+        EqualTo('new_password', message="Пароли должны совпадать")
+    ])
+    
+    submit = SubmitField('Сменить пароль')
+
+    def validate_new_password(self, password):
+        pwd = password.data
+        if re.search(r'[\*&{}|+]', pwd):
+            raise ValidationError('Пароль содержит запрещенные символы (* & { } | +)')
+        if not re.search(r'[A-ZА-Я]', pwd):
+            raise ValidationError('Пароль должен содержать хотя бы одну заглавную букву')
+        if not re.search(r'\d', pwd):
+            raise ValidationError('Пароль должен содержать хотя бы одну цифру')

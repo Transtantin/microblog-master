@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1 class="mb-4">Панель администратора</h1>
+    
+    <!-- Меню админки -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="#">Статистика</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('admin_users') }}">Управление пользователями</a>
+        </li>
+    </ul>
+
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Статистика системы</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Метрика</th>
+                                <th>Значение</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Всего пользователей</td>
+                                <td><span class="badge bg-primary rounded-pill">{{ users_count }}</span></td>
+                            </tr>
+                            <tr>
+                                <td>Всего постов</td>
+                                <td><span class="badge bg-primary rounded-pill">{{ posts_count }}</span></td>
+                            </tr>
+                            <tr>
+                                <td>Средняя длина поста (символов)</td>
+                                <td>{{ avg_post_len }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Топ-3 активных писателя</h5>
+                </div>
+                <ul class="list-group list-group-flush">
+                {% for username, count in active_users %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="fw-bold">{{ username }}</span>
+                        <span class="badge bg-success rounded-pill">{{ count }} постов</span>
+                    </li>
+                {% else %}
+                    <li class="list-group-item">Нет данных</li>
+                {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+{% endblock %}

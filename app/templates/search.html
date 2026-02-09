@@ -1,41 +1,71 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h1>Поиск и фильтрация</h1>
-    
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">
-        <form action="" method="get">
-            <p>
-                {{ form.q.label }}: {{ form.q(size=30, placeholder="Текст поста или автор") }}
-            </p>
-            <p>
-                {{ form.date_from.label }}: {{ form.date_from() }} 
-                {{ form.date_to.label }}: {{ form.date_to() }}
-            </p>
-            <p>
-                {{ form.sort_by.label }}: {{ form.sort_by() }}
-            </p>
-            <p>{{ form.submit() }}</p>
-        </form>
-    </div>
-
-    <h3>Результаты поиска ({{ posts|length }})</h3>
-    <hr>
-    
-    {% for post in posts %}
-        <div>
-            <p>
-                <img src="{{ post.author.avatar(36) }}">
-                <a href="{{ url_for('user', username=post.author.username) }}">
-                    {{ post.author.username }}
-                </a>
-                <small>({{ post.timestamp.strftime('%d.%m.%Y %H:%M') }})</small>:
-            </p>
-            <p>{{ post.body }}</p>
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        
+        <h2 class="mb-4">Поиск и фильтрация</h2>
+        
+        <div class="card mb-4 bg-light border-0">
+            <div class="card-body">
+                <form action="" method="get" class="row g-3">
+                    <div class="col-md-12">
+                        {{ form.q.label(class="form-label") }}
+                        {{ form.q(class="form-control", placeholder="Текст поста или автор") }}
+                    </div>
+                    
+                    <div class="col-md-4">
+                        {{ form.date_from.label(class="form-label") }}
+                        {{ form.date_from(class="form-control") }}
+                    </div>
+                    
+                    <div class="col-md-4">
+                        {{ form.date_to.label(class="form-label") }}
+                        {{ form.date_to(class="form-control") }}
+                    </div>
+                    
+                    <div class="col-md-4">
+                        {{ form.sort_by.label(class="form-label") }}
+                        {{ form.sort_by(class="form-select") }}
+                    </div>
+                    
+                    <div class="col-12 text-end">
+                         <a href="{{ url_for('search') }}" class="btn btn-link text-decoration-none">Сбросить</a>
+                        {{ form.submit(class="btn btn-primary px-4") }}
+                    </div>
+                </form>
+            </div>
         </div>
-        <hr>
-    {% else %}
-        <p>Ничего не найдено.</p>
-    {% endfor %}
 
+        <h4 class="mb-3">Результаты поиска <span class="badge bg-secondary">{{ posts|length }}</span></h4>
+        
+        <div class="posts-feed">
+            {% for post in posts %}
+            <div class="card mb-3 card-post shadow-sm border-light">
+                <div class="card-body">
+                    <div class="d-flex mb-2">
+                        <a href="{{ url_for('user', username=post.author.username) }}">
+                            <img src="{{ post.author.avatar(40) }}" class="user-avatar me-2">
+                        </a>
+                        <div>
+                            <h6 class="card-title mb-0">
+                                <a href="{{ url_for('user', username=post.author.username) }}" class="text-decoration-none text-dark">
+                                    {{ post.author.username }}
+                                </a>
+                            </h6>
+                            <small class="text-muted">{{ post.timestamp.strftime('%d.%m.%Y %H:%M') }}</small>
+                        </div>
+                    </div>
+                    <p class="card-text fs-5">{{ post.body }}</p>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-warning">
+                Ничего не найдено по вашему запросу.
+            </div>
+            {% endfor %}
+        </div>
+        
+    </div>
+</div>
 {% endblock %}

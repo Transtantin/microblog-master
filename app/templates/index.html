@@ -1,61 +1,154 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h1>Привет, {{ current_user.username }}!</h1>
-    
-    <!-- ФОРМА СОЗДАНИЯ ПОСТА -->
-    <form action="" method="post">
-        {{ form.hidden_tag() }}
-        <p>
-            {{ form.post.label }}<br>
-            {{ form.post(cols=32, rows=4) }}<br>
-            {% for error in form.post.errors %}
-            <span style="color: red;">[{{ error }}]</span>
-            {% endfor %}
-        </p>
-        <p>{{ form.submit() }}</p>
-    </form>
-    
-    <hr>
-    
-    <div style="margin-bottom: 20px;">
-        <a href="{{ url_for('index', feed='all') }}" 
-           style="{{ 'font-weight: bold;' if not show_followed else '' }}">
-           Все посты
-        </a> 
-        | 
-        <a href="{{ url_for('index', feed='following') }}"
-           style="{{ 'font-weight: bold;' if show_followed else '' }}">
-           Только подписки
-        </a>
-    </div>
+    <div class="row">
+        <!-- Левая колонка: Профиль (кратко) или навигация -->
+        <div class="col-md-3 d-none d-md-block">
+            {% if not current_user.is_anonymous %}
+            <div class="card mb-4 shadow-sm">
+                <div class="card-body text-center">
+                    <img src="{{ current_user.avatar(128) }}" class="user-avatar user-avatar-lg mb-3">
+                    <h5 class="card-title">{{ current_user.username }}</h5>
+                    <p class="card-text text-muted small">
+                        {% if current_user.about_me %}
+                            {{ current_user.about_me[:50] }}...
+                        {% else %}
+                            Добро пожаловать!
+                        {% endif %}
+                    </p>
+                    <a href="{{ url_for('user', username=current_user.username) }}" class="btn btn-sm btn-outline-primary">Мой профиль</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
 
-    <!-- СПИСОК ПОСТОВ -->
-    {% for post in posts %}
-    <div>
-        <p>
-            <img src="{{ post.author.avatar(36) }}">
-            <a href="{{ url_for('user', username=post.author.username) }}">
-                {{ post.author.username }}
-            </a>
-            пишет:
-        </p>
-        <p><i>{{ post.body }}</i></p>
-        <small>Опубликовано: {{ post.timestamp }}</small>
-        
-        <!-- НОВЫЙ БЛОК: Кнопки управления -->
-        {% if post.author.id == current_user.id %}
-            <br>
-            <a href="{{ url_for('edit_post', id=post.id) }}">Редактировать</a> | 
-            <a href="{{ url_for('delete_post', id=post.id) }}" 
-               onclick="return confirm('Вы уверены, что хотите удалить этот пост?');">Удалить</a>
-        {% endif %}
-        <!-- КОНЕЦ НОВОГО БЛОКА -->
-        {% if post.author == current_user or current_user.is_admin() %}
-         <a href="{{ url_for('delete_post', id=post.id) }}" style="color: red; margin-left: 10px;">[x]</a>
-        {% endif %}
+        <!-- Центральная колонка: Лента и форма -->
+        <div class="col-md-9">
+            
+            <!-- Форма поиска -->
+            <div class="card mb-4 bg-light border-0">
+                <div class="card-body py-3">
+                    <form action="" method="get" class="row g-2 align-items-center">
+                        {% if show_followed %}
+                            <input type="hidden" name="feed" value="following">
+                        {% endif %}
+                        
+                        <div class="col-auto flex-grow-1">
+                            {{ search_form.q(class="form-control", placeholder="Поиск по тексту или автору...") }}
+                        </div>
+                        <div class="col-auto">
+                            <!-- Кнопка фильтров (можно раскрывать, но пока оставим рядом) -->
+                             <div class="dropdown">
+                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-funnel"></i> Фильтры
+                                </button>
+                                <ul class="dropdown-menu p-3" style="width: 300px;">
+                                    <li class="mb-2">
+                                        <label class="form-label small">{{ search_form.date_from.label.text }}</label>
+                                        {{ search_form.date_from(class="form-control form-control-sm") }}
+                                    </li>
+                                    <li class="mb-2">
+                                        <label class="form-label small">{{ search_form.date_to.label.text }}</label>
+                                        {{ search_form.date_to(class="form-control form-control-sm") }}
+                                    </li>
+                                    <li class="mb-2">
+                                        <label class="form-label small">{{ search_form.sort_by.label.text }}</label>
+                                        {{ search_form.sort_by(class="form-select form-select-sm") }}
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><button type="submit" class="btn btn-primary btn-sm w-100">Применить</button></li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i></button>
+                        </div>
+                        {% if request.args.get('q') or request.args.get('date_from') %}
+                        <div class="col-auto">
+                            <a href="{{ url_for('index') }}" class="btn btn-link text-decoration-none">Сброс</a>
+                        </div>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+
+            <!-- Форма нового поста -->
+            {% if not current_user.is_anonymous %}
+            <div class="card mb-4 shadow-sm">
+                <div class="card-body">
+                    <form action="" method="post">
+                        {{ post_form.hidden_tag() }}
+                        <div class="mb-2">
+                            {{ post_form.post(class="form-control border-0", rows=3, placeholder="Что нового, " + current_user.username + "?") }}
+                            {% for error in post_form.post.errors %}
+                                <div class="text-danger small">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        <div class="d-flex justify-content-end">
+                            {{ post_form.submit(class="btn btn-primary px-4") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Переключатель ленты -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="btn-group">
+                    <a href="{{ url_for('index') }}" class="btn {{ 'btn-primary' if not show_followed else 'btn-outline-primary' }}">
+                        Все посты
+                    </a>
+                    <a href="{{ url_for('index', feed='following') }}" class="btn {{ 'btn-primary' if show_followed else 'btn-outline-primary' }}">
+                        Мои подписки
+                    </a>
+                </div>
+                <h4 class="mb-0 text-muted">Лента</h4>
+            </div>
+
+            <!-- Список постов -->
+            <div class="posts-feed">
+                {% for post in posts %}
+                <div class="card mb-3 card-post shadow-sm border-light">
+                    <div class="card-body">
+                        <div class="d-flex mb-2">
+                            <a href="{{ url_for('user', username=post.author.username) }}">
+                                <img src="{{ post.author.avatar(40) }}" class="user-avatar me-2">
+                            </a>
+                            <div>
+                                <h6 class="card-title mb-0">
+                                    <a href="{{ url_for('user', username=post.author.username) }}" class="text-decoration-none text-dark">
+                                        {{ post.author.username }}
+                                    </a>
+                                </h6>
+                                <small class="text-muted">{{ post.timestamp.strftime('%d.%m.%Y %H:%M') }}</small>
+                            </div>
+                            
+                             <!-- Меню действий с постом -->
+                            {% if post.author == current_user or current_user.is_admin() %}
+                            <div class="ms-auto dropdown">
+                                <button class="btn btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    {% if post.author == current_user %}
+                                    <li><a class="dropdown-item" href="{{ url_for('edit_post', id=post.id) }}">Редактировать</a></li>
+                                    {% endif %}
+                                    <li><a class="dropdown-item text-danger" href="{{ url_for('delete_post', id=post.id) }}">Удалить</a></li>
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <p class="card-text fs-5">{{ post.body }}</p>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-secondary text-center">
+                    Здесь пока ничего нет. Будьте первыми!
+                </div>
+                {% endfor %}
+            </div>
+            
+        </div>
     </div>
-    <hr>
-    {% endfor %}
-    
 {% endblock %}

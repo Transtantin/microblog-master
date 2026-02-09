@@ -6,6 +6,7 @@ from app import db, login
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from hashlib import md5
+from flask import url_for
 
 followers = db.Table('followers',
     db.Column('follower_id', sa.Integer, sa.ForeignKey('user.id'), primary_key=True),
@@ -22,13 +23,16 @@ class User( UserMixin, db.Model):
     posts: so.WriteOnlyMapped['Post'] = so.relationship(back_populates='author')
     role: so.Mapped[str] = so.mapped_column(sa.String(20), default='user')
     blocked: so.Mapped[bool] = so.mapped_column(default=False)
+    avatar_file: so.Mapped[str] = so.mapped_column(sa.String(20), default='default.png', server_default='default.jpg')
+
+    def avatar(self, size):
+        if not self.avatar_file:
+            return url_for('static', filename='avatars/default.png')
+        return url_for('static', filename='avatars/' + self.avatar_file)
     
     def is_admin(self):
         return self.role == 'admin'
 
-    def avatar(self, size):
-        digest = md5(self.email.lower().encode('utf-8')).hexdigest()
-        return f'https://www.gravatar.com/avatar/{digest}?d=identicon&s={size}'    
 
     def __repr__(self):
         return f'<User {self.username}>'

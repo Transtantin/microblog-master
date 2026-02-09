@@ -1,6 +1,6 @@
 from flask import render_template, flash, redirect, url_for, request
 from app import app, db
-from app.forms import LoginForm, RegistrationForm, EditProfileForm, SearchForm, PostForm 
+from app.forms import LoginForm, RegistrationForm, EditProfileForm, SearchForm, PostForm, ChangePasswordForm 
 from flask_login import current_user, login_user, logout_user, login_required
 from app.models import User
 from urllib.parse import urlsplit
@@ -10,34 +10,71 @@ from app.models import Post
 from wtforms.validators import Optional
 from functools import wraps
 from flask import abort
+import os
+import secrets
+from PIL import Image
 
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/index', methods=['GET', 'POST'])
 @login_required
 def index():
-    form = PostForm()
-    
-    # ЛОГИКА СОХРАНЕНИЯ ПОСТА
-    if form.validate_on_submit():
-        post = Post(body=form.post.data, author=current_user)
+    # 1. Форма создания поста
+    post_form = PostForm()
+    if post_form.validate_on_submit():
+        post = Post(body=post_form.post.data, author=current_user)
         db.session.add(post)
         db.session.commit()
-        flash('Ваш пост опубликован!')
         return redirect(url_for('index'))
-    
-    # ЛОГИКА ОТОБРАЖЕНИЯ ПОСТОВ
+
+    # 2. Форма поиска
+    search_form = SearchForm(request.args, meta={'csrf': False})
+
+    # 3. Логика выборки (Подписки или Все)
     show_followed = False
     if request.args.get('feed') == 'following':
         show_followed = True
-        query = current_user.following_posts() # Только подписки
+        query = current_user.following_posts()
     else:
-        query = sa.select(Post).order_by(Post.timestamp.desc()) # Все посты (глобальная лента)
+        query = sa.select(Post).join(Post.author)
+
+    # 4. Фильтрация
+    if search_form.q.data:
+        search_term = f"%{search_form.q.data}%"
+        query = query.where(
+            sa.or_(
+                Post.body.ilike(search_term),
+                User.username.ilike(search_term)
+            )
+        )
+    
+    if search_form.date_from.data:
+        date_from = datetime.combine(search_form.date_from.data, datetime.min.time())
+        query = query.where(Post.timestamp >= date_from)
+
+    if search_form.date_to.data:
+        date_to = datetime.combine(search_form.date_to.data, datetime.max.time())
+        query = query.where(Post.timestamp <= date_to)
+
+    # 5. Сортировка
+    if search_form.sort_by.data == 'oldest':
+        query = query.order_by(Post.timestamp.asc())
+    elif search_form.sort_by.data == 'author_asc':
+        query = query.order_by(User.username.asc())
+    elif search_form.sort_by.data == 'author_desc':
+        query = query.order_by(User.username.desc())
+    else:
+        query = query.order_by(Post.timestamp.desc())
 
     posts = db.session.scalars(query).all()
-        
-    return render_template("index.html", title='Home Page', form=form, posts=posts, show_followed=show_followed)
 
+    # Передаем ОБЕ формы
+    return render_template("index.html", title='Главная', 
+                           post_form=post_form, 
+                           search_form=search_form, 
+                           posts=posts, 
+                           show_followed=show_followed)
+                           
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -50,7 +87,7 @@ def login():
             sa.select(User).where(User.username==form.username.data))
 
         if user is None or not user.check_password(form.password.data):
-            flash('Invalid username or password')
+            flash('Неверный логин или пароль')
             return redirect(url_for('login'))
         if user.blocked:
             flash('Ваш аккаунт заблокирован администратором.')
@@ -112,6 +149,10 @@ def before_request():
 def edit_profile():
     form = EditProfileForm(current_user.username)
     if form.validate_on_submit():
+        if form.avatar.data:
+            picture_file = save_picture(form.avatar.data)
+            current_user.avatar_file = picture_file
+
         current_user.username = form.username.data
         current_user.about_me = form.about_me.data
         db.session.commit()
@@ -123,25 +164,24 @@ def edit_profile():
     return render_template('edit_profile.html', title = 'Редактировать профиль', form = form)
 
 
-@app.route('/edit_post/<int:id>', methods = ['GET', 'POST'])
+@app.route('/edit_post/<int:id>', methods=['GET', 'POST'])
 @login_required
 def edit_post(id):
     post = db.first_or_404(sa.select(Post).where(Post.id == id))
 
     if post.author != current_user:
-        flash('Вы не можете едактировать этот пост.')
+        flash('Вы не можете редактировать этот пост.')
         return redirect(url_for('index'))
 
     form = PostForm()
     if form.validate_on_submit():
         post.body = form.post.data
         db.session.commit()
-        flash('Ваш пост был обновлен.')
         return redirect(url_for('index'))
-    elif request.method =='GET':
+    elif request.method == 'GET':
         form.post.data = post.body
 
-    return render_template('edit_post.html', title = 'Редактирование поста', form = form)
+    return render_template('edit_post.html', title='Редактирование поста', form=form)
 
 
 @app.route('/delete_post/<int:id>')
@@ -155,7 +195,6 @@ def delete_post(id):
 
     db.session.delete(post)
     db.session.commit()
-    flash('Пост удален.')
     
         
     return redirect(url_for('index'))
@@ -190,20 +229,15 @@ def unfollow(username):
     return redirect(url_for('user', username = username))
 
 
-# app/routes.py
-
-
 
 @app.route('/search')
 @login_required
 def search():
-    # Создаем форму из аргументов GET-запроса
     form = SearchForm(request.args, meta={'csrf': False})
 
-    # Базовый запрос
     query = sa.select(Post).join(Post.author)
 
-    # 1. Поиск по тексту или автору
+    # поиск по тексту или автору
     if form.q.data:
         search_term = f"%{form.q.data}%"
         query = query.where(
@@ -213,17 +247,17 @@ def search():
             )
         )
 
-    # 2. Фильтр "С даты"
+    # с даты
     if form.date_from.data:
         date_from = datetime.combine(form.date_from.data, datetime.min.time())
         query = query.where(Post.timestamp >= date_from)
 
-    # 3. Фильтр "По дату" (ИСПРАВЛЕНА ОПЕЧАТКА: date_to вместо date_from)
+    # по дату
     if form.date_to.data:
         date_to = datetime.combine(form.date_to.data, datetime.max.time())
         query = query.where(Post.timestamp <= date_to)  
 
-    # 4. Сортировка
+    # сортировка
     if form.sort_by.data == 'oldest':
         query = query.order_by(Post.timestamp.asc())
     elif form.sort_by.data == 'author_asc':
@@ -231,7 +265,6 @@ def search():
     elif form.sort_by.data == 'author_desc':
         query = query.order_by(User.username.desc()) 
     else:
-        # По умолчанию или если выбрано 'newest'
         query = query.order_by(Post.timestamp.desc())
 
     posts = db.session.scalars(query).all()
@@ -267,7 +300,7 @@ def admin_stats():
         .order_by(sa.desc('total'))
         .limit(3)
     ).all()
-    return render_template('admin_status.html',
+    return render_template('admin_stats.html',
                             users_count=user_count,
                             posts_count=posts_count,
                             avg_post_len=avg_post_len,
@@ -279,11 +312,11 @@ def admin_stats():
 @admin_required
 def block_user(user_id):
     user = db.session.get(User, user_id)
-    if user and user.role != 'admin': # Админа банить нельзя!
+    if user and user.role != 'admin': 
         user.blocked = True
         db.session.commit()
         flash(f'Пользователь {user.username} заблокирован.')
-    return redirect(url_for('admin_users')) # Сделаем список юзеров ниже
+    return redirect(url_for('admin_users')) 
 
 @app.route('/admin/unblock/<int:user_id>')
 @login_required
@@ -303,3 +336,39 @@ def unblock_user(user_id):
 def admin_users():
     users = db.session.scalars(sa.select(User).order_by(User.id)).all()
     return render_template('admin_users.html', users=users)
+
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    form = ChangePasswordForm()
+    
+    if form.validate_on_submit():
+        if not current_user.check_password(form.old_password.data):
+            flash('Неверный старый пароль.')
+            return redirect(url_for('change_password'))
+        
+        current_user.set_password(form.new_password.data)
+        db.session.commit()
+        
+        flash('Ваш пароль был успешно изменен.')
+        return redirect(url_for('user', username=current_user.username))
+        
+    return render_template('change_password.html', title='Смена пароля', form=form)
+
+
+def save_picture(form_picture):
+    # Генерируем случайное имя (чтобы не было коллизий)
+    random_hex = secrets.token_hex(8)
+    _, f_ext = os.path.splitext(form_picture.filename)
+    picture_fn = random_hex + f_ext
+    
+    # Полный путь для сохранения
+    picture_path = os.path.join(app.root_path, 'static/avatars', picture_fn)
+    
+    output_size = (125, 125)
+    i = Image.open(form_picture)
+    i.thumbnail(output_size)
+    i.save(picture_path)
+    
+    return picture_fn
