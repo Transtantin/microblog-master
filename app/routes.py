@@ -17,7 +17,6 @@ from PIL import Image
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/index', methods=['GET', 'POST'])
-@login_required
 def index():
     # 1. Форма создания поста
     post_form = PostForm()
@@ -30,12 +29,14 @@ def index():
     # 2. Форма поиска
     search_form = SearchForm(request.args, meta={'csrf': False})
 
-    # 3. Логика выборки (Подписки или Все)
+    # НАЧАЛО БЛОКА ВЫБОРКИ
     show_followed = False
-    if request.args.get('feed') == 'following':
+
+    if current_user.is_authenticated and request.args.get('feed') == 'following':
         show_followed = True
         query = current_user.following_posts()
     else:
+        # ВОТ ЭТОТ ELSE ОБЯЗАТЕЛЕН
         query = sa.select(Post).join(Post.author)
 
     # 4. Фильтрация
@@ -66,14 +67,27 @@ def index():
     else:
         query = query.order_by(Post.timestamp.desc())
 
-    posts = db.session.scalars(query).all()
+    page = request.args.get('page', 1, type=int)
+    posts = db.paginate(query, page=page, per_page=app.config['POSTS_PER_PAGE'], error_out=False)
 
+    next_url = url_for('index', page=posts.next_num) if posts.has_next else None
+    prev_url = url_for('index', page=posts.prev_num) if posts.has_prev else None
+    
+    if current_user.is_authenticated:
     # Передаем ОБЕ формы
-    return render_template("index.html", title='Главная', 
-                           post_form=post_form, 
-                           search_form=search_form, 
-                           posts=posts, 
-                           show_followed=show_followed)
+        return render_template("index.html", title='Главная', 
+                            post_form=post_form, 
+                            search_form=search_form, 
+                            posts=posts.items, 
+                            next_url=next_url,
+                            prev_url=prev_url,
+                            show_followed=show_followed)
+    else:
+        return render_template("index.html", title='Главная',
+                            search_form=search_form, 
+                            posts=posts.items,
+                            next_url=next_url,
+                            prev_url=prev_url)
                            
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -130,10 +144,16 @@ def register():
 def user(username):
     user = db.first_or_404(sa.select(User).where(User.username == username))
 
-    querry = sa.select(Post).where(Post.author == user).order_by(Post.timestamp.desc())
+    page = request.args.get('page', 1, type=int)
+    query = sa.select(Post).where(Post.author == user).order_by(Post.timestamp.desc())
 
-    posts = db.session.scalars(querry).all()
-    return render_template('user.html', user=user, posts=posts)
+    posts = db.paginate(query, page=page, per_page=app.config['POSTS_PER_PAGE'], error_out=False)
+    
+    next_url = url_for('user', username=user.username, page=posts.next_num) if posts.has_next else None
+    prev_url = url_for('user', username=user.username, page=posts.prev_num) if posts.has_prev else None
+
+    return render_template('user.html', user=user, posts=posts.items, 
+                           next_url=next_url, prev_url=prev_url)
 
 
 
